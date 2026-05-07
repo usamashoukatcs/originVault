@@ -1,0 +1,16 @@
+# Config with API keys — never commit
+config.yaml
+
+# Build output & generated content
+tmp/
+output/
+backups/
+videos.xlsx
+originvault
+
+# Frontend build
+web/dist/
+web/node_modules/
+
+# IDE
+.idea/

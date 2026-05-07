@@ -1,0 +1,22 @@
+anthropic_api_key: ""
+pexels_api_key: ""
+pixabay_api_key: ""
+unsplash_access_key: ""
+fal_api_key: ""
+openai_api_key: ""
+imagen_api_key: ""
+
+voice:
+  voice: "onyx"   # deep authoritative voice, best for documentary/history
+  model: "tts-1"  # tts-1 (faster/cheaper) or tts-1-hd (higher quality)
+
+channel:
+  niche: "OriginVault - Untold origin stories of inventions and companies that shaped the world"
+  video_length_min: 5
+  video_length_max: 12
+
+research:
+  serper_api_key: ""   # optional — free at serper.dev (2,500 searches/month free tier)
+  news_api_key: ""     # newsapi.org
+
+output_dir: "output"
