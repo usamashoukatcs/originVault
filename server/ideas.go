@@ -44,7 +44,7 @@ func handleGenerateIdeas(w http.ResponseWriter, r *http.Request) {
 	}
 
 	existing := store.IdeaSubjects()
-	subjects, err := pipeline.SuggestSubjectsBatch(cfg.AnthropicAPIKey, niche, count, existing)
+	subjects, err := pipeline.SuggestSubjectsBatch(cfg.AnthropicAPIKey, niche, count, existing, researchCfg)
 	if err != nil {
 		jsonErr(w, 500, fmt.Sprintf("failed to generate ideas: %v", err))
 		return
@@ -104,8 +104,9 @@ func handleExpandIdea(w http.ResponseWriter, r *http.Request) {
 		videoLength := minLen + rand.Intn(maxLen-minLen+1)
 
 		research, _ := pipeline.ResearchTopic(idea.Subject, researchCfg)
+		seoData := pipeline.FetchSEOData(idea.Subject, researchCfg)
 
-		script, err := pipeline.GenerateScript(cfg.AnthropicAPIKey, cfg.Channel.Niche, videoLength, research)
+		script, err := pipeline.GenerateScript(cfg.AnthropicAPIKey, cfg.Channel.Niche, videoLength, research, seoData)
 		if err != nil {
 			if current, _ := store.GetIdea(iid); current != nil {
 				current.Status = "error"

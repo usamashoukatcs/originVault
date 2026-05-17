@@ -599,6 +599,116 @@ func buildAutoOverlays(proj *Project, voiceResult *pipeline.VoiceoverResult) []O
 	return overlays
 }
 
+// handleGenerateThumbnail asks Claude to design a YouTube thumbnail as an HTML/CSS file.
+// Open the saved thumbnail.html in a browser and screenshot at 1280×720.
+func handleGenerateThumbnail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, err := store.GetProject(id)
+	if err != nil {
+		jsonErr(w, 404, err.Error())
+		return
+	}
+	if p.Script == "" {
+		jsonErr(w, 400, "script not generated yet")
+		return
+	}
+
+	jsonOK(w, map[string]string{"status": "generating_thumbnail"})
+
+	go func() {
+		logf := func(format string, args ...any) {
+			line := fmt.Sprintf(format, args...)
+			fmt.Println("[thumb]", line)
+			store.AppendLog(id, line)
+		}
+
+		hookLine := extractThumbnailHook(p)
+		thumbPath := filepath.Join(p.OutputDir, "thumbnail.html")
+
+		imageFile := findProjectImageFile(p)
+		logf("Designing thumbnail — hook: %q, image: %q", hookLine, imageFile)
+		tcfg := pipeline.ThumbnailConfig{
+			HookLine:  hookLine,
+			Title:     p.Title,
+			Topic:     p.Topic,
+			Script:    p.Script,
+			ImageFile: imageFile,
+		}
+		if err := pipeline.GenerateThumbnailHTML(cfg.AnthropicAPIKey, tcfg, thumbPath); err != nil {
+			logf("Thumbnail failed: %v", err)
+			return
+		}
+		logf("Thumbnail HTML saved: thumbnail.html — open in browser and screenshot at 1280×720")
+
+		proj, _ := store.GetProject(id)
+		proj.ThumbnailPath = thumbPath
+		store.SaveProject(proj)
+	}()
+}
+
+// extractThumbnailHook picks the best 2-5 word hook line for the thumbnail.
+// Uses the first hook_text from cues; falls back to meaningful words from the title.
+func extractThumbnailHook(p *Project) string {
+	for _, c := range p.Cues {
+		if c.HookText != "" {
+			return c.HookText
+		}
+	}
+	skip := map[string]bool{
+		"the": true, "a": true, "an": true, "of": true,
+		"and": true, "in": true, "on": true, "at": true, "to": true,
+	}
+	var words []string
+	for _, w := range strings.Fields(p.Title) {
+		if !skip[strings.ToLower(w)] {
+			words = append(words, w)
+		}
+		if len(words) == 4 {
+			break
+		}
+	}
+	if len(words) == 0 {
+		return p.Topic
+	}
+	return strings.Join(words, " ")
+}
+
+// findProjectImageFile returns the filename (not full path) of the best clip image in the
+// project output directory, suitable for use as a thumbnail background.
+// Returns "" if no image is found.
+func findProjectImageFile(proj *Project) string {
+	isImg := func(name string) bool {
+		ext := strings.ToLower(filepath.Ext(name))
+		return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp"
+	}
+
+	// prefer images from selected clips (most relevant to the content)
+	for _, cue := range proj.Cues {
+		for _, clip := range cue.SelectedClips {
+			if isImg(clip.ClipPath) {
+				if _, err := os.Stat(clip.ClipPath); err == nil {
+					return filepath.Base(clip.ClipPath)
+				}
+			}
+		}
+		if isImg(cue.SelectedClipPath) {
+			if _, err := os.Stat(cue.SelectedClipPath); err == nil {
+				return filepath.Base(cue.SelectedClipPath)
+			}
+		}
+	}
+
+	// fallback: any image in the output dir (skip thumbnail files)
+	entries, _ := os.ReadDir(proj.OutputDir)
+	for _, e := range entries {
+		name := e.Name()
+		if isImg(name) && !strings.HasPrefix(name, "thumbnail") {
+			return name
+		}
+	}
+	return ""
+}
+
 // copyFile copies a file from src to dst.
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)

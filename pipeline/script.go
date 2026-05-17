@@ -71,7 +71,7 @@ type claudeResponse struct {
 	} `json:"content"`
 }
 
-func GenerateScript(apiKey, niche string, videoLengthMinutes int, research []ResearchResult) (*ScriptOutput, error) {
+func GenerateScript(apiKey, niche string, videoLengthMinutes int, research []ResearchResult, seoData ...SEOData) (*ScriptOutput, error) {
 	currentYear := time.Now().Year()
 	wordsNeeded := videoLengthMinutes * 150
 	clipsNeeded := videoLengthMinutes * 20 // one clip change every ~3 seconds
@@ -102,7 +102,42 @@ func GenerateScript(apiKey, niche string, videoLengthMinutes int, research []Res
 		researchBlock = rb.String()
 	}
 
-	prompt := fmt.Sprintf(`You are a YouTube scriptwriter for the channel "%s".%s
+	seoBlock := ""
+	if len(seoData) > 0 {
+		seo := seoData[0]
+		if len(seo.Autocomplete) > 0 || len(seo.CompetitorTitles) > 0 {
+			var sb strings.Builder
+			sb.WriteString("\n\n=== YOUTUBE SEO DATA — USE THIS FOR TITLE, DESCRIPTION & KEYWORDS ===\n")
+			sb.WriteString("These are real signals from YouTube search. Build your title, description, and keywords around these.\n\n")
+			if len(seo.Autocomplete) > 0 {
+				sb.WriteString("What people search on YouTube for this topic:\n")
+				for _, s := range seo.Autocomplete {
+					sb.WriteString("- " + s + "\n")
+				}
+				sb.WriteString("\n")
+			}
+			if len(seo.CompetitorTitles) > 0 {
+				sb.WriteString("Existing YouTube video titles on this topic (these are your competition — don't copy, but use them to understand the space):\n")
+				for _, t := range seo.CompetitorTitles {
+					sb.WriteString("- " + t + "\n")
+				}
+				sb.WriteString("\n")
+			}
+			sb.WriteString("TITLE RULES using this SEO data:\n")
+			sb.WriteString("- Use high-search-volume phrases from the autocomplete list naturally in your title\n")
+			sb.WriteString("- Your title should be different from all competitor titles — find the angle they missed\n")
+			sb.WriteString("- Include the subject name early in the title (within the first 4 words)\n")
+			sb.WriteString("DESCRIPTION RULES:\n")
+			sb.WriteString("- First 2 sentences must use keywords from the autocomplete list — this is what YouTube indexes\n")
+			sb.WriteString("- Naturally weave in 5-8 of the autocomplete phrases throughout the description\n")
+			sb.WriteString("- Add timestamps, a CTA to subscribe, and 5-10 relevant hashtags at the bottom\n")
+			sb.WriteString("KEYWORDS: Include the exact autocomplete phrases as keywords (they reflect real search volume)\n")
+			sb.WriteString("=== END SEO DATA ===\n")
+			seoBlock = sb.String()
+		}
+	}
+
+	prompt := fmt.Sprintf(`You are a YouTube scriptwriter for the channel "%s".%s%s
 
 === VOICE AND STYLE — STUDY THIS CAREFULLY ===
 
@@ -178,12 +213,69 @@ HONEST AND GENUINE TONE:
   - If the data is mixed, say it is mixed
   - The viewer should feel they are getting the real version, not the PR version
 
+OPEN LOOPS — the single most powerful YouTube retention technique:
+  An open loop is a question or mystery you plant early that you don't answer until later.
+  Plant at least 3 open loops across the script:
+    - Section 1: hint at the ending without revealing it. "What happened to them is still one of the most debated failures in business history."
+    - Section 2→3 transition: hint at the coming conflict before the rise is done. "The problem is, the thing that made them great was also the thing that would eventually break them."
+    - Section 3→4 transition: reframe the rise as false security. "Looking back now, all the warning signs were there. Nobody was reading them."
+  Open loops work because the human brain cannot leave a question unanswered. Viewers watch to get the answer.
+  NEVER close a loop and open a new one at the same time — stack them so multiple questions are unanswered simultaneously.
+
+BUT / THEREFORE RULE — every paragraph transition must use causality, not sequence:
+  WRONG (sequence — this is a list, not a story):
+    "They launched in 1985. They expanded to Europe. They went public in 1990."
+  RIGHT (causality — this is a story):
+    "They launched in 1985 and it worked, THEREFORE they expanded to Europe. BUT the European market was nothing like what they expected, and THEREFORE when they went public in 1990, the timing could not have been worse."
+  Audit every paragraph break. If the transition could be replaced by "and then", rewrite it with "but" or "therefore".
+  "And then" is a list. "But/therefore" is cause and effect. Only stories have cause and effect.
+
+REAL QUOTES — include at least 2 verbatim documented quotes from real people in the story:
+  Not paraphrases. Actual words from real interviews, shareholder letters, news articles, or books.
+  "Steve Ballmer laughed it off: 'There's no chance that the iPhone is going to get any significant market share. No chance.'"
+  Why: quotes make the story feel real. They create irony when the person was spectacularly wrong.
+  Place quotes at: the overconfidence moment, the turning point, or the lesson. Never quote someone saying something boring.
+  If you cannot find a documented verbatim quote, write what they were reported to have believed — but do not fabricate words in quotation marks.
+
+FORESHADOWING — plant the seed of the conflict inside the background section:
+  In Section 2, include exactly one line that sounds like a positive character trait or business decision — but is actually the thing that will cause the collapse.
+  It should feel neutral when first heard. Only in hindsight does the viewer realise it was the first crack.
+  "Ferruccio Lamborghini had one rule: never ask anyone for money. It served him well for a decade. Then it didn't."
+  "The CEO believed a great product would speak for itself and never hired a single salesperson. He was right — for a while."
+  This plants dread without explaining it. The viewer doesn't know why this matters yet. They stay to find out.
+
+MICRO-CLIFFHANGERS — every paragraph must end with a forward pull:
+  A paragraph that ends with a fact is a paragraph the viewer can stop at. Do not let them stop.
+  Every paragraph must end with one of:
+    A) A revelation that reframes what they just heard: "And what they found in the audit was worse than anyone expected."
+    B) A forward tease: "But that is not even the most interesting part of this story."
+    C) A contradiction: "The irony is, the competitor they dismissed later copied exactly what they refused to do."
+    D) A hanging question: "The question nobody has ever fully answered is: why did nobody stop it?"
+  If your paragraph ends with a neutral fact ("they opened 200 new locations that year"), add one of the above after it.
+
+EMOTIONAL INVESTMENT — the viewer must root for them before you show them fall:
+  Section 3 must contain at least one moment where the founder or company does something genuinely admirable, risky, or relatable.
+  This is the line that makes the fall matter. Without it, the collapse is just information.
+  "They could have taken the safe route and licensed the technology. Instead they bet the entire company on the belief that people deserved better. For five years, that looked like genius."
+  If the viewer does not care about the subject before Section 4, the video is just Wikipedia with music.
+  Make them care. Then break their heart.
+
+SENTENCE RHYTHM — alternate short and long sentences deliberately:
+  The pattern that creates momentum and satisfies the ear:
+    1. Short punch (5-8 words): "They were out of money."
+    2. Long explanation (20-30 words): "Not the 'we need to cut costs' kind of out of money — the kind where next week's payroll is gone and nobody outside the boardroom knows yet."
+    3. Short gut-punch (6-10 words): "That was a Tuesday in March, 2001."
+  Use this short → long → short pattern at every major reveal.
+  Never write 3 long sentences in a row — the viewer's ear loses the beat.
+  Never write 4 short sentences in a row — it sounds like a children's book.
+
 ARC — six-act story structure. Each section must FEEL like a story told by a friend, not a Wikipedia article.
 No section labels. No headers. No "Now let's talk about the rise." Just keep talking.
 
   SECTION 1 — THE HOOK (first ~30 seconds, ~75 words)
   Start with an unresolved conflict, a shocking outcome, or a paradox — WITHOUT naming the subject yet.
   Make the viewer unable to look away before the first 30 seconds is up.
+  Plant your first open loop here — hint at the ending without revealing it.
   Examples:
     "A farmer wrote a letter to Ferrari in 1963. The reply was so rude, it started a supercar company."
     "At its peak, Nokia made one in every three phones on earth. By 2013, they were gone from the phone business entirely."
@@ -195,19 +287,23 @@ No section labels. No headers. No "Now let's talk about the rise." Just keep tal
   Write it like you're telling a friend the backstory over dinner — not a company bio.
   Ground the viewer: founder's full name, personality, origin, what problem they saw, what they built first.
   Make the founder feel like a PERSON, not a Wikipedia stub. Give them a motivation or a quirk.
+  Plant your FORESHADOWING line here — one positive-sounding trait that will later be their undoing.
   "Ferruccio Lamborghini was not a dreamer. He was a farmer and a mechanic who just didn't like being told his car was bad."
+  End this section with a micro-cliffhanger that teases the rise: "And for a while, it worked better than anyone dared to imagine."
 
   SECTION 3 — THE RISE, with turning points (~20% of script)
   Don't list milestones. Show the DECISIONS and MOMENTS that changed everything.
-  Every turning point should feel like a scene: who decided what, when, and why it mattered.
+  Every turning point: who decided what, when, and why it mattered. Use BUT/THEREFORE causality.
   "They had 10 stores. Then a manager named Harry Cunningham said: what if we let stores keep their own hours? Within 5 years they had 1,000."
-  Include: specific numbers, competitor names, product launches with exact names and years.
-  Every major number = a stat cue. Re-hook the viewer at the end of this section.
+  Include: specific numbers, competitor names, product launches with exact names and years. Every major number = stat cue.
+  Build EMOTIONAL INVESTMENT here — give the viewer one moment to admire the company before the fall.
+  End with a re-hook that opens the next loop: "Up to this point, this is a success story. And that is exactly the problem."
 
   SECTION 4 — THE CONFLICT OR CHALLENGE (~20% of script)
-  Every great company story has a villain: bad debt, a wrong technology bet, a ruthless competitor, an internal power struggle, a founder's ego.
+  Every great company story has a villain: bad debt, wrong technology bet, ruthless competitor, internal power struggle, founder's ego.
   Name the villain. Be specific. Who made the bad call? When? What were they thinking?
-  This section should feel uncomfortable — like watching a slow-motion car crash.
+  Include at least one REAL QUOTE from someone who was there — ideally one that aged badly.
+  This section should feel uncomfortable — like watching a slow-motion car crash where you already know the ending.
   "The strange thing is, they could see Netflix coming. They just didn't think it mattered."
   Re-hook: "And here is the part nobody talks about..." or "Up to this point this looks like a success story. It is not."
 
@@ -215,10 +311,12 @@ No section labels. No headers. No "Now let's talk about the rise." Just keep tal
   What actually happened? Did they survive? Are they struggling? Is this a cautionary tale or a comeback story?
   Be honest. Don't soften it. If they went bankrupt, say bankrupt. If they sold for pennies on the dollar, say that.
   If they survived against the odds, make that feel EARNED, not inevitable.
+  Use BUT/THEREFORE to show the chain of consequences — not a list of what happened.
   Include current state with the most recent available figures.
 
   SECTION 6 — THE LESSON AND TAKEAWAY (~10% of script)
-  End with 2-3 sentences that give the viewer something to walk away with.
+  Close every open loop you planted. The viewer stayed for the answer — give it to them.
+  End with 2-3 sentences that give the viewer something to walk away with and REPEAT to other people.
   Not a moral lecture. Something specific to THIS story that no other video could end with.
   "7-Eleven survived because convenience stores sell comfort, and people will always want that at 2am."
   "Blockbuster failed not because of Netflix, but because they had $1 billion to fight back and chose not to use it."
@@ -473,7 +571,7 @@ MANDATORY FINAL CHECK before outputting:
 - Never use double-quote characters (") inside any JSON string value. Use single quotes (') instead.
 - Every backslash inside a string must be doubled: use \\ not \.
 - Newlines inside strings must be written as \n, not actual newlines.`,
-		niche, researchBlock, currentYear, currentYear, wordsNeeded, wordsNeeded, clipsNeeded)
+		niche, researchBlock, seoBlock, currentYear, currentYear, wordsNeeded, wordsNeeded, clipsNeeded)
 
 	reqBody := claudeRequest{
 		Model:     "claude-sonnet-4-6",

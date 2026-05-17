@@ -154,9 +154,14 @@ func handleGenerateScript(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Step 3: Generate script
+		// Step 3: Fetch YouTube SEO signals in parallel with research completion
+		logf("Fetching YouTube SEO signals...")
+		seoData := pipeline.FetchSEOData(subject, researchCfg)
+		logf("SEO: %d autocomplete suggestions, %d competitor titles", len(seoData.Autocomplete), len(seoData.CompetitorTitles))
+
+		// Step 4: Generate script
 		logf("Generating script with Claude...")
-		script, scriptErr := pipeline.GenerateScript(cfg.AnthropicAPIKey, cfg.Channel.Niche, videoLength, research)
+		script, scriptErr := pipeline.GenerateScript(cfg.AnthropicAPIKey, cfg.Channel.Niche, videoLength, research, seoData)
 		if scriptErr != nil {
 			store.SetStatus(id, "error", fmt.Sprintf("Script generation failed: %v", scriptErr))
 			return

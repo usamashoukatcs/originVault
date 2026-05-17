@@ -65,9 +65,158 @@ Example outputs: "LEGO" / "Post-it Notes" / "Nintendo" / "BlackBerry" / "Polaroi
 	return subject, nil
 }
 
+// TrendContext holds real-time trending data used to bias topic suggestions toward what people are searching now.
+type TrendContext struct {
+	TrendingSearches []string // from Google Trends daily RSS
+	YouTubeSearches  []string // YouTube autocomplete suggestions for niche keywords
+}
+
+// FetchTrendContext gathers real-time trending topics.
+// Uses free, keyless APIs: Google Trends daily RSS and YouTube autocomplete.
+func FetchTrendContext(niche string) TrendContext {
+	var ctx TrendContext
+
+	trending, err := fetchGoogleTrendingSearches()
+	if err == nil {
+		ctx.TrendingSearches = trending
+	}
+
+	queries := []string{
+		"history of",
+		"origin story",
+		"rise and fall of",
+		"how " + firstWord(niche) + " started",
+	}
+	seen := map[string]bool{}
+	for _, q := range queries {
+		sug, err := fetchYouTubeAutocomplete(q)
+		if err != nil {
+			continue
+		}
+		for _, s := range sug {
+			if !seen[s] && len(ctx.YouTubeSearches) < 25 {
+				ctx.YouTubeSearches = append(ctx.YouTubeSearches, s)
+				seen[s] = true
+			}
+		}
+	}
+	return ctx
+}
+
+// SEOData holds YouTube-specific search signals for a subject used to improve title/description/keywords.
+type SEOData struct {
+	Autocomplete     []string // YouTube search suggestions for the subject
+	CompetitorTitles []string // existing YouTube video titles on this topic (via Serper)
+}
+
+// FetchSEOData gathers YouTube SEO signals for the given subject.
+// Always hits YouTube autocomplete (free). Optionally uses Serper to find competitor titles.
+func FetchSEOData(subject string, cfg ResearchConfig) SEOData {
+	var data SEOData
+
+	queries := []string{
+		subject + " history",
+		subject + " origin story",
+		subject + " rise and fall",
+		subject + " founded by",
+		"how " + subject + " started",
+	}
+	seen := map[string]bool{}
+	for _, q := range queries {
+		sug, err := fetchYouTubeAutocomplete(q)
+		if err != nil {
+			continue
+		}
+		for _, s := range sug {
+			if !seen[s] {
+				data.Autocomplete = append(data.Autocomplete, s)
+				seen[s] = true
+			}
+		}
+	}
+
+	if cfg.SerperAPIKey != "" {
+		results, err := searchSerper("site:youtube.com "+subject+" history origin story", cfg.SerperAPIKey)
+		if err == nil {
+			for _, r := range results {
+				if r.Title != "" {
+					data.CompetitorTitles = append(data.CompetitorTitles, r.Title)
+				}
+			}
+		}
+	}
+
+	return data
+}
+
+// fetchGoogleTrendingSearches fetches today's top trending searches in the US from Google Trends RSS.
+func fetchGoogleTrendingSearches() ([]string, error) {
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Get(
+		"https://trends.google.com/trends/trendingsearches/daily/rss?geo=US")
+	if err != nil {
+		return nil, fmt.Errorf("Google Trends RSS: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	var trends []string
+	seen := map[string]bool{}
+	for _, item := range strings.Split(string(body), "<item>")[1:] {
+		title := cleanHTML(extractXMLTag(item, "title"))
+		if title != "" && !seen[title] {
+			trends = append(trends, title)
+			seen[title] = true
+		}
+		if len(trends) >= 20 {
+			break
+		}
+	}
+	return trends, nil
+}
+
+// fetchYouTubeAutocomplete returns YouTube search autocomplete suggestions for a query.
+// Uses the free Google suggest API — no API key required.
+func fetchYouTubeAutocomplete(query string) ([]string, error) {
+	reqURL := fmt.Sprintf(
+		"https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=%s",
+		url.QueryEscape(query))
+
+	req, _ := http.NewRequest("GET", reqURL, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; OriginVaultBot/1.0)")
+
+	resp, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("YouTube autocomplete: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	// Response: ["query",["suggestion1","suggestion2",...]]
+	var parsed []json.RawMessage
+	if err := json.Unmarshal(body, &parsed); err != nil || len(parsed) < 2 {
+		return nil, fmt.Errorf("autocomplete parse failed")
+	}
+	var suggestions []string
+	if err := json.Unmarshal(parsed[1], &suggestions); err != nil {
+		return nil, fmt.Errorf("suggestions parse failed")
+	}
+	return suggestions, nil
+}
+
+// firstWord returns the first word of a string.
+func firstWord(s string) string {
+	if idx := strings.Index(s, " "); idx != -1 {
+		return s[:idx]
+	}
+	return s
+}
+
 // SuggestSubjectsBatch asks Claude to suggest count unique subjects for the niche,
 // excluding any subjects already in the exclude list.
-func SuggestSubjectsBatch(apiKey, niche string, count int, exclude []string) ([]string, error) {
+// Passes real-time trending context so Claude picks topics people are searching today.
+func SuggestSubjectsBatch(apiKey, niche string, count int, exclude []string, cfg ResearchConfig) ([]string, error) {
+	trendCtx := FetchTrendContext(niche)
+
 	excludeNote := ""
 	if len(exclude) > 0 {
 		excludeNote = "\n\nDo NOT suggest any of these — already covered:\n"
@@ -76,14 +225,33 @@ func SuggestSubjectsBatch(apiKey, niche string, count int, exclude []string) ([]
 		}
 	}
 
-	prompt := fmt.Sprintf(`You are a YouTube channel planner for "%s".%s
+	trendNote := ""
+	if len(trendCtx.TrendingSearches) > 0 || len(trendCtx.YouTubeSearches) > 0 {
+		trendNote = "\n\n=== TRENDING RIGHT NOW — USE THIS TO PICK TOPICS PEOPLE ARE SEARCHING TODAY ===\n"
+		if len(trendCtx.TrendingSearches) > 0 {
+			trendNote += "Today's top trending Google searches in the US:\n"
+			for _, t := range trendCtx.TrendingSearches {
+				trendNote += "- " + t + "\n"
+			}
+		}
+		if len(trendCtx.YouTubeSearches) > 0 {
+			trendNote += "\nYouTube searches people are making right now:\n"
+			for _, t := range trendCtx.YouTubeSearches {
+				trendNote += "- " + t + "\n"
+			}
+		}
+		trendNote += "\nIMPORTANT: If any trending topic has a compelling origin story that fits this niche, prioritize it over a generic evergreen topic. Trending topics get 3-5x more views in the first 48 hours.\n=== END TRENDING ===\n"
+	}
+
+	prompt := fmt.Sprintf(`You are a YouTube channel planner for "%s".%s%s
 
 Suggest EXACTLY %d specific companies, inventions, or brands to make videos about.
 Pick subjects with dramatic origin stories — founding struggles, near-death moments, stolen ideas, accidental discoveries, or shocking falls.
+Prioritize subjects that are currently trending or in the news if they fit the niche.
 Each must be unique and compelling.
 
 Return ONLY a JSON array of strings. No explanation. No markdown. No code blocks.
-Example: ["LEGO", "Post-it Notes", "Nintendo", "BlackBerry", "Polaroid"]`, niche, excludeNote, count)
+Example: ["LEGO", "Post-it Notes", "Nintendo", "BlackBerry", "Polaroid"]`, niche, excludeNote, trendNote, count)
 
 	reqBody := claudeRequest{
 		Model:     "claude-sonnet-4-6",

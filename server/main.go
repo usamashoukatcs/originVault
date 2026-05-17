@@ -104,6 +104,7 @@ func main() {
 	mux.HandleFunc("POST /api/projects/{id}/voice", handleGenerateVoice)
 	mux.HandleFunc("POST /api/projects/{id}/assemble", handleAssemble)
 	mux.HandleFunc("GET /api/projects/{id}/download", handleDownload)
+	mux.HandleFunc("POST /api/projects/{id}/thumbnail", handleGenerateThumbnail)
 
 	// ── Cue clip selection ────────────────────────────────────────────────────
 	mux.HandleFunc("POST /api/projects/{id}/cues/{idx}/select", handleSelectClip)

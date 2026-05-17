@@ -25,7 +25,8 @@ type Project struct {
 	Status      string         `json:"status"` // pending | generating | script_done | voicing | voice_done | assembling | done | error
 	StatusLog   []string       `json:"status_log"`
 	OutputDir   string         `json:"output_dir"`
-	VideoPath   string         `json:"video_path"`
+	VideoPath     string         `json:"video_path"`
+	ThumbnailPath string         `json:"thumbnail_path,omitempty"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	Cues        []DashboardCue `json:"cues"`
