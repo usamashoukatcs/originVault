@@ -3,17 +3,25 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import type { DashboardCue, Project, SearchResult } from '../types'
 
-type Source = 'pexels' | 'pexels-photo' | 'pixabay-video' | 'pixabay-photo' | 'unsplash' | 'commons' | 'duckduckgo' | 'ai'
+type Source = 'serp-google' | 'serp-bing' | 'serp-yahoo' | 'serp-youtube' | 'bing' | 'flickr' | 'google-cse' | 'google' | 'duckduckgo' | 'commons' | 'pexels' | 'pexels-photo' | 'pixabay-video' | 'pixabay-photo' | 'unsplash' | 'ai'
 
-const SOURCES: { id: Source; label: string }[] = [
-  { id: 'pexels',        label: 'Pexels (video)' },
-  { id: 'pexels-photo',  label: 'Pexels (photo)' },
-  { id: 'pixabay-video', label: 'Pixabay (video)' },
-  { id: 'pixabay-photo', label: 'Pixabay (photo)' },
-  { id: 'unsplash',      label: 'Unsplash' },
-  { id: 'commons',       label: 'Wikimedia' },
-  { id: 'duckduckgo',    label: 'DuckDuckGo' },
-  { id: 'ai',            label: 'AI Generate' },
+const SOURCES: { id: Source; label: string; badge?: string; group?: string }[] = [
+  { id: 'serp-google',   label: 'Google Images',  badge: 'new', group: 'SerpAPI' },
+  { id: 'serp-bing',     label: 'Bing Images',    group: 'SerpAPI' },
+  { id: 'serp-yahoo',    label: 'Yahoo Images',   group: 'SerpAPI' },
+  { id: 'serp-youtube',  label: 'YouTube',        group: 'SerpAPI' },
+  { id: 'duckduckgo',    label: 'DuckDuckGo',     group: 'Free' },
+  { id: 'commons',       label: 'Wikimedia',      group: 'Free' },
+  { id: 'google',        label: 'Google (Serper)', group: 'Free' },
+  { id: 'pexels-photo',  label: 'Pexels',         group: 'Stock' },
+  { id: 'unsplash',      label: 'Unsplash',       group: 'Stock' },
+  { id: 'pixabay-photo', label: 'Pixabay',        group: 'Stock' },
+  { id: 'pexels',        label: 'Pexels (video)', group: 'Stock' },
+  { id: 'pixabay-video', label: 'Pixabay (video)', group: 'Stock' },
+  { id: 'flickr',        label: 'Flickr',         group: 'Stock' },
+  { id: 'bing',          label: 'Bing (Azure)',   group: 'Stock' },
+  { id: 'google-cse',    label: 'Google CSE',     group: 'Stock' },
+  { id: 'ai',            label: 'AI Generate',    group: 'AI' },
 ]
 
 const AI_MODELS = [
@@ -32,14 +40,17 @@ export default function CuePicker() {
   const [statusLog, setStatusLog] = useState<string[]>([])
 
   const [cueIdx, setCueIdx] = useState(0)
-  const [source, setSource] = useState<Source>('pexels')
+  const [source, setSource] = useState<Source>('serp-google')
   const [query, setQuery] = useState('')
 
   // Per-source result cache — switching tabs preserves results
   const [resultCache, setResultCache] = useState<Partial<Record<Source, SearchResult[]>>>({})
   const [errorCache, setErrorCache]   = useState<Partial<Record<Source, string>>>({})
+  const [hasMoreCache, setHasMoreCache] = useState<Partial<Record<Source, boolean>>>({})
+  const [loadingMore, setLoadingMore] = useState(false)
   const [searching, setSearching] = useState(false)
   const [selecting, setSelecting] = useState(false)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
   // AI generation state
   const [aiPrompt, setAiPrompt]       = useState('')
@@ -164,14 +175,16 @@ export default function CuePicker() {
     if (!project || source === 'ai') return
     const q = customQuery ?? query
     if (!q.trim()) return
-    // Increment page on each re-search so the user gets fresh results
-    const nextPage = (pageRef.current[source] ?? 0) + 1
-    pageRef.current[source] = nextPage
+    // Always reset to page 1 on a new search
+    pageRef.current[source] = 1
     setSearching(true)
     setErrorCache(prev => ({ ...prev, [source]: '' }))
+    setHasMoreCache(prev => ({ ...prev, [source]: false }))
     try {
-      const res = await api.search({ source, query: q, page: nextPage })
+      const res = await api.search({ source, query: q, page: 1 })
       setResultCache(prev => ({ ...prev, [source]: res.results }))
+      // if we got a full page, assume there are more
+      setHasMoreCache(prev => ({ ...prev, [source]: res.results.length >= 8 }))
       if (res.results.length === 0) {
         setErrorCache(prev => ({ ...prev, [source]: 'No results — try a different query or source.' }))
       }
@@ -181,6 +194,41 @@ export default function CuePicker() {
       setSearching(false)
     }
   }
+
+  async function doLoadMore() {
+    if (!project || source === 'ai' || searching || loadingMore) return
+    if (!hasMoreCache[source]) return
+    const q = query.trim()
+    if (!q) return
+    const nextPage = (pageRef.current[source] ?? 1) + 1
+    pageRef.current[source] = nextPage
+    setLoadingMore(true)
+    try {
+      const res = await api.search({ source, query: q, page: nextPage })
+      if (res.results.length > 0) {
+        setResultCache(prev => ({ ...prev, [source]: [...(prev[source] ?? []), ...res.results] }))
+        setHasMoreCache(prev => ({ ...prev, [source]: res.results.length >= 8 }))
+      } else {
+        setHasMoreCache(prev => ({ ...prev, [source]: false }))
+      }
+    } catch {
+      // silently fail — user can scroll up and try again
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
+  // IntersectionObserver: auto-load more when sentinel scrolls into view
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) doLoadMore() },
+      { threshold: 0.1 }
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [source, searching, loadingMore, hasMoreCache])
 
   async function selectResult(result: SearchResult) {
     if (!project || !id) return
@@ -387,24 +435,37 @@ export default function CuePicker() {
 
           {/* Source tabs */}
           <div className="px-5 pt-3 pb-2 border-b border-gray-800 shrink-0 space-y-2">
-            <div className="flex gap-1 flex-wrap">
-              {SOURCES.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => setSource(s.id)}
-                  className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
-                    source === s.id
-                      ? 'bg-brand-500 text-white'
-                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                  }`}
-                >
-                  {s.label}
-                  {s.id !== 'ai' && resultCache[s.id] && resultCache[s.id]!.length > 0 && (
-                    <span className="ml-1 text-gray-500">({resultCache[s.id]!.length})</span>
-                  )}
-                </button>
-              ))}
-            </div>
+            {/* Render tabs grouped by group label */}
+            {(() => {
+              const groups: string[] = []
+              SOURCES.forEach(s => { if (s.group && !groups.includes(s.group)) groups.push(s.group) })
+              return groups.map(group => (
+                <div key={group} className="flex items-center gap-1 flex-wrap">
+                  <span className="text-[10px] text-gray-600 uppercase tracking-wider w-14 shrink-0">{group}</span>
+                  {SOURCES.filter(s => s.group === group).map(s => (
+                    <button
+                      key={s.id}
+                      onClick={() => setSource(s.id)}
+                      className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
+                        source === s.id
+                          ? 'bg-brand-500 text-white'
+                          : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                      }`}
+                    >
+                      {s.label}
+                      {s.badge && (
+                        <span className="ml-1.5 bg-green-700 text-green-200 px-1 py-0.5 rounded text-[10px] leading-none">
+                          {s.badge}
+                        </span>
+                      )}
+                      {s.id !== 'ai' && resultCache[s.id] && resultCache[s.id]!.length > 0 && (
+                        <span className="ml-1 text-gray-500">({resultCache[s.id]!.length})</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              ))
+            })()}
 
             {/* Search bar (hidden for AI tab) */}
             {source !== 'ai' && (
@@ -532,22 +593,36 @@ export default function CuePicker() {
                 )}
 
                 {!searching && searchResults.length > 0 && (
-                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                    {searchResults.map((result, i) => {
-                      const isSelected = cue?.selected_clips?.some(c => c.thumb_url === result.thumb_url) ??
-                        (cue?.selected_url === result.page_url && cue?.selected_source === result.source)
-                      return (
-                        <ResultCard
-                          key={i}
-                          result={result}
-                          selected={isSelected}
-                          selecting={selecting}
-                          seqCount={cueSeqCount}
-                          onSelect={() => selectResult(result)}
-                        />
-                      )
-                    })}
-                  </div>
+                  <>
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                      {searchResults.map((result, i) => {
+                        const isSelected = cue?.selected_clips?.some(c => c.thumb_url === result.thumb_url) ??
+                          (cue?.selected_url === result.page_url && cue?.selected_source === result.source)
+                        return (
+                          <ResultCard
+                            key={i}
+                            result={result}
+                            selected={isSelected}
+                            selecting={selecting}
+                            seqCount={cueSeqCount}
+                            onSelect={() => selectResult(result)}
+                          />
+                        )
+                      })}
+                    </div>
+                    {/* Infinite scroll sentinel */}
+                    {hasMoreCache[source] && (
+                      <div ref={sentinelRef} className="py-4 text-center">
+                        {loadingMore
+                          ? <p className="text-xs text-gray-500 animate-pulse">Loading more...</p>
+                          : <p className="text-xs text-gray-700">Scroll for more</p>
+                        }
+                      </div>
+                    )}
+                    {!hasMoreCache[source] && searchResults.length > 0 && (
+                      <p className="text-xs text-gray-700 text-center py-3">{searchResults.length} results</p>
+                    )}
+                  </>
                 )}
               </>
             )}
