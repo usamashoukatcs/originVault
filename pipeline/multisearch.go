@@ -661,6 +661,75 @@ func SearchDDGMulti(query string) ([]SearchResult, error) {
 	return out, nil
 }
 
+// SearchSerperImagesMulti returns Google Image Search results via serper.dev.
+// page is 1-based; each page returns up to 20 results for infinite scroll.
+// Uses the existing Serper API key — no additional signup needed.
+func SearchSerperImagesMulti(apiKey, query string, page int) ([]SearchResult, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("serper API key not configured (add research.serper_api_key to config.yaml)")
+	}
+	if page < 1 {
+		page = 1
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q":    query,
+		"num":  20,
+		"page": page,
+	})
+
+	req, _ := http.NewRequest("POST", "https://google.serper.dev/images", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", apiKey)
+
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Serper images request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Serper images API error %d: %s", resp.StatusCode, string(b))
+	}
+
+	var result struct {
+		Images []struct {
+			Title          string `json:"title"`
+			ImageURL       string `json:"imageUrl"`
+			ImageWidth     int    `json:"imageWidth"`
+			ImageHeight    int    `json:"imageHeight"`
+			ThumbnailURL   string `json:"thumbnailUrl"`
+			Link           string `json:"link"`
+		} `json:"images"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("Serper images decode failed: %w", err)
+	}
+
+	var out []SearchResult
+	for _, img := range result.Images {
+		if img.ImageURL == "" {
+			continue
+		}
+		thumb := img.ThumbnailURL
+		if thumb == "" {
+			thumb = img.ImageURL
+		}
+		out = append(out, SearchResult{
+			ThumbURL:    thumb,
+			DownloadURL: img.ImageURL,
+			PageURL:     img.Link,
+			Source:      "google",
+			IsVideo:     false,
+			Width:       img.ImageWidth,
+			Height:      img.ImageHeight,
+			Title:       img.Title,
+		})
+		}
+	return out, nil
+}
+
 // SearchUnsplashMulti returns up to 15 Unsplash photo results for a query.
 // page is 1-based; pass different values to get fresh results on re-search.
 func SearchUnsplashMulti(accessKey, query string, page int) ([]SearchResult, error) {
@@ -735,3 +804,418 @@ func SearchUnsplashMulti(accessKey, query string, page int) ([]SearchResult, err
 	return out, nil
 }
 
+
+// SearchFlickrMulti returns real photos from Flickr — excellent for historical,
+// archival, and news photography. Many Getty/AP/Reuters photos are on Flickr.
+// page is 1-based; returns 20 results per page.
+func SearchFlickrMulti(apiKey, query string, page int) ([]SearchResult, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("flickr API key not configured (add search.flickr_api_key to config.yaml)")
+	}
+	if page < 1 {
+		page = 1
+	}
+	searchURL := fmt.Sprintf(
+		"https://api.flickr.com/services/rest/?method=flickr.photos.search&api_key=%s&text=%s&per_page=20&page=%d&format=json&nojsoncallback=1&extras=url_m,url_l,url_o,owner_name&sort=relevance&content_type=1",
+		apiKey, url.QueryEscape(query), page,
+	)
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Get(searchURL)
+	if err != nil {
+		return nil, fmt.Errorf("Flickr request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Photos struct {
+			Photo []struct {
+				ID    string `json:"id"`
+				Owner string `json:"owner"`
+				Title string `json:"title"`
+				URLM  string `json:"url_m"`
+				URLL  string `json:"url_l"`
+				URLO  string `json:"url_o"`
+				HM    int    `json:"height_m"`
+				WM    int    `json:"width_m"`
+				HL    int    `json:"height_l"`
+				WL    int    `json:"width_l"`
+			} `json:"photo"`
+		} `json:"photos"`
+		Stat string `json:"stat"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("Flickr decode failed: %w", err)
+	}
+	if result.Stat != "ok" {
+		return nil, fmt.Errorf("Flickr API error: stat=%s", result.Stat)
+	}
+
+	var out []SearchResult
+	for _, p := range result.Photos.Photo {
+		dl := p.URLO
+		if dl == "" { dl = p.URLL }
+		if dl == "" { dl = p.URLM }
+		if dl == "" { continue }
+		thumb := p.URLM
+		if thumb == "" { thumb = dl }
+		w, h := p.WL, p.HL
+		if w == 0 { w, h = p.WM, p.HM }
+		out = append(out, SearchResult{
+			ThumbURL:    thumb,
+			DownloadURL: dl,
+			PageURL:     fmt.Sprintf("https://www.flickr.com/photos/%s/%s", p.Owner, p.ID),
+			Source:      "flickr",
+			Width:       w,
+			Height:      h,
+			Title:       p.Title,
+		})
+	}
+	return out, nil
+}
+
+// SearchGoogleCSEMulti returns Google Image Search results via the official
+// Custom Search API. Free tier: 100 queries/day.
+// Requires: API key (console.cloud.google.com) + Search Engine ID (cse.google.com).
+// page is 1-based; Google CSE returns up to 10 results per page.
+func SearchGoogleCSEMulti(apiKey, cseID, query string, page int) ([]SearchResult, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("Google CSE API key not configured (add search.google_api_key to config.yaml)")
+	}
+	if cseID == "" {
+		return nil, fmt.Errorf("Google CSE ID not configured (add search.google_cse_id to config.yaml)")
+	}
+	if page < 1 { page = 1 }
+	start := (page-1)*10 + 1
+
+	searchURL := fmt.Sprintf(
+		"https://www.googleapis.com/customsearch/v1?key=%s&cx=%s&q=%s&searchType=image&num=10&start=%d",
+		apiKey, cseID, url.QueryEscape(query), start,
+	)
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Get(searchURL)
+	if err != nil {
+		return nil, fmt.Errorf("Google CSE request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Items []struct {
+			Title string `json:"title"`
+			Link  string `json:"link"`
+			Image struct {
+				ContextLink   string `json:"contextLink"`
+				Width         int    `json:"width"`
+				Height        int    `json:"height"`
+				ThumbnailLink string `json:"thumbnailLink"`
+			} `json:"image"`
+		} `json:"items"`
+		Error *struct{ Message string `json:"message"` } `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("Google CSE decode failed: %w", err)
+	}
+	if result.Error != nil {
+		return nil, fmt.Errorf("Google CSE API error: %s", result.Error.Message)
+	}
+
+	var out []SearchResult
+	for _, item := range result.Items {
+		if item.Link == "" { continue }
+		out = append(out, SearchResult{
+			ThumbURL:    item.Image.ThumbnailLink,
+			DownloadURL: item.Link,
+			PageURL:     item.Image.ContextLink,
+			Source:      "google-cse",
+			Width:       item.Image.Width,
+			Height:      item.Image.Height,
+			Title:       item.Title,
+		})
+	}
+	return out, nil
+}
+
+// SearchBingImagesMulti returns image results from Bing Image Search API.
+// Free tier: 1,000 queries/month via Azure Cognitive Services (F1 tier).
+// page is 1-based; returns 20 results per page.
+func SearchBingImagesMulti(apiKey, query string, page int) ([]SearchResult, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("Bing API key not configured (add search.bing_api_key to config.yaml)")
+	}
+	if page < 1 { page = 1 }
+	offset := (page - 1) * 20
+
+	searchURL := fmt.Sprintf(
+		"https://api.bing.microsoft.com/v7.0/images/search?q=%s&count=20&offset=%d&mkt=en-US&safeSearch=Off",
+		url.QueryEscape(query), offset,
+	)
+	req, _ := http.NewRequest("GET", searchURL, nil)
+	req.Header.Set("Ocp-Apim-Subscription-Key", apiKey)
+
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Bing request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Bing API error %d: %s", resp.StatusCode, string(b))
+	}
+
+	var result struct {
+		Value []struct {
+			Name        string `json:"name"`
+			ContentURL  string `json:"contentUrl"`
+			HostPageURL string `json:"hostPageUrl"`
+			ThumbnailURL string `json:"thumbnailUrl"`
+			Width       int    `json:"width"`
+			Height      int    `json:"height"`
+		} `json:"value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("Bing decode failed: %w", err)
+	}
+
+	var out []SearchResult
+	for _, item := range result.Value {
+		if item.ContentURL == "" { continue }
+		out = append(out, SearchResult{
+			ThumbURL:    item.ThumbnailURL,
+			DownloadURL: item.ContentURL,
+			PageURL:     item.HostPageURL,
+			Source:      "bing",
+			Width:       item.Width,
+			Height:      item.Height,
+			Title:       item.Name,
+		})
+	}
+	return out, nil
+}
+
+// searchSerpAPI is a shared helper that calls the SerpAPI JSON endpoint.
+func searchSerpAPI(params map[string]string) ([]byte, error) {
+	base := "https://serpapi.com/search.json?"
+	vals := url.Values{}
+	for k, v := range params {
+		vals.Set(k, v)
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Get(base + vals.Encode())
+	if err != nil {
+		return nil, fmt.Errorf("SerpAPI request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("SerpAPI error %d: %s", resp.StatusCode, string(b))
+	}
+	return b, nil
+}
+
+// SearchSerpAPIGoogleImages returns Google Image Search results via SerpAPI.
+// Free tier: 250 searches/month at serpapi.com.
+// page is 1-based; uses Google's ijn (image page) parameter internally.
+func SearchSerpAPIGoogleImages(apiKey, query string, page int) ([]SearchResult, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("SerpAPI key not configured (add search.serp_api_key to config.yaml)")
+	}
+	if page < 1 {
+		page = 1
+	}
+	b, err := searchSerpAPI(map[string]string{
+		"engine":  "google_images",
+		"q":       query,
+		"ijn":     fmt.Sprintf("%d", page-1), // 0-indexed
+		"api_key": apiKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		ImagesResults []struct {
+			Thumbnail     string `json:"thumbnail"`
+			Original      string `json:"original"`
+			Title         string `json:"title"`
+			Link          string `json:"link"`
+			OriginalWidth  int   `json:"original_width"`
+			OriginalHeight int   `json:"original_height"`
+		} `json:"images_results"`
+	}
+	if err := json.Unmarshal(b, &result); err != nil {
+		return nil, fmt.Errorf("SerpAPI Google Images decode failed: %w", err)
+	}
+
+	var out []SearchResult
+	for _, img := range result.ImagesResults {
+		dl := img.Original
+		if dl == "" { dl = img.Thumbnail }
+		if dl == "" { continue }
+		out = append(out, SearchResult{
+			ThumbURL:    img.Thumbnail,
+			DownloadURL: dl,
+			PageURL:     img.Link,
+			Source:      "serp-google",
+			Width:       img.OriginalWidth,
+			Height:      img.OriginalHeight,
+			Title:       img.Title,
+		})
+		if len(out) >= 20 { break }
+	}
+	return out, nil
+}
+
+// SearchSerpAPIBingImages returns Bing Image Search results via SerpAPI.
+func SearchSerpAPIBingImages(apiKey, query string, page int) ([]SearchResult, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("SerpAPI key not configured (add search.serp_api_key to config.yaml)")
+	}
+	if page < 1 { page = 1 }
+	first := (page-1)*20 + 1
+
+	b, err := searchSerpAPI(map[string]string{
+		"engine":  "bing_images",
+		"q":       query,
+		"first":   fmt.Sprintf("%d", first),
+		"api_key": apiKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Images []struct {
+			Thumbnail struct{ Src string `json:"src"` }   `json:"thumbnail"`
+			Original  struct{ Src string `json:"src"`; Width int `json:"width"`; Height int `json:"height"` } `json:"original"`
+			Link      string `json:"link"`
+			Title     string `json:"title"`
+		} `json:"images"`
+	}
+	if err := json.Unmarshal(b, &result); err != nil {
+		return nil, fmt.Errorf("SerpAPI Bing Images decode failed: %w", err)
+	}
+
+	var out []SearchResult
+	for _, img := range result.Images {
+		dl := img.Original.Src
+		if dl == "" { dl = img.Thumbnail.Src }
+		if dl == "" { continue }
+		out = append(out, SearchResult{
+			ThumbURL:    img.Thumbnail.Src,
+			DownloadURL: dl,
+			PageURL:     img.Link,
+			Source:      "serp-bing",
+			Width:       img.Original.Width,
+			Height:      img.Original.Height,
+			Title:       img.Title,
+		})
+		if len(out) >= 20 { break }
+	}
+	return out, nil
+}
+
+// SearchSerpAPIYahooImages returns Yahoo Image Search results via SerpAPI.
+func SearchSerpAPIYahooImages(apiKey, query string, page int) ([]SearchResult, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("SerpAPI key not configured (add search.serp_api_key to config.yaml)")
+	}
+	if page < 1 { page = 1 }
+	b := (page-1)*20 + 1
+
+	raw, err := searchSerpAPI(map[string]string{
+		"engine":  "yahoo_images",
+		"p":       query,       // Yahoo uses "p" not "q"
+		"b":       fmt.Sprintf("%d", b),
+		"api_key": apiKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Images []struct {
+			Thumbnail string `json:"thumbnail"`
+			Original  string `json:"original"`
+			Link      string `json:"link"`
+			Title     string `json:"title"`
+			Width     int    `json:"width"`
+			Height    int    `json:"height"`
+		} `json:"images"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("SerpAPI Yahoo Images decode failed: %w", err)
+	}
+
+	var out []SearchResult
+	for _, img := range result.Images {
+		dl := img.Original
+		if dl == "" { dl = img.Thumbnail }
+		if dl == "" { continue }
+		out = append(out, SearchResult{
+			ThumbURL:    img.Thumbnail,
+			DownloadURL: dl,
+			PageURL:     img.Link,
+			Source:      "serp-yahoo",
+			Width:       img.Width,
+			Height:      img.Height,
+			Title:       img.Title,
+		})
+		if len(out) >= 20 { break }
+	}
+	return out, nil
+}
+
+// SearchSerpAPIYouTube returns YouTube video results via SerpAPI.
+// Results include video thumbnails and YouTube links — useful for finding
+// real historical footage, company commercials, and archive clips.
+func SearchSerpAPIYouTube(apiKey, query string) ([]SearchResult, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("SerpAPI key not configured (add search.serp_api_key to config.yaml)")
+	}
+
+	b, err := searchSerpAPI(map[string]string{
+		"engine":       "youtube",
+		"search_query": query,
+		"api_key":      apiKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		VideoResults []struct {
+			Title     string `json:"title"`
+			Link      string `json:"link"`
+			Thumbnail struct {
+				Static string `json:"static"`
+			} `json:"thumbnail"`
+			Channel struct {
+				Name string `json:"name"`
+			} `json:"channel"`
+			Views         string `json:"views"`
+			PublishedDate string `json:"published_date"`
+			Length        string `json:"length"`
+		} `json:"video_results"`
+	}
+	if err := json.Unmarshal(b, &result); err != nil {
+		return nil, fmt.Errorf("SerpAPI YouTube decode failed: %w", err)
+	}
+
+	var out []SearchResult
+	for _, v := range result.VideoResults {
+		if v.Link == "" { continue }
+		title := v.Title
+		if v.Channel.Name != "" {
+			title += " — " + v.Channel.Name
+		}
+		if v.Length != "" {
+			title += " (" + v.Length + ")"
+		}
+		out = append(out, SearchResult{
+			ThumbURL:    v.Thumbnail.Static,
+			DownloadURL: v.Link,
+			PageURL:     v.Link,
+			Source:      "serp-youtube",
+			IsVideo:     true,
+			Title:       title,
+		})
+		if len(out) >= 20 { break }
+	}
+	return out, nil
+}

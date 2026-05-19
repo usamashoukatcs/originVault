@@ -16,7 +16,13 @@ channel:
   video_length_max: 12
 
 research:
-  serper_api_key: ""   # optional — free at serper.dev (2,500 searches/month free tier)
+  serper_api_key: ""   # optional — serper.dev (2,500 credits free, used for Google web/image search)
   news_api_key: ""     # newsapi.org
+
+search:
+  flickr_api_key: ""   # free — flickr.com/services/apps/create (best for historical/archival photos)
+  google_api_key: ""   # free 100/day — console.cloud.google.com → Custom Search API → Credentials
+  google_cse_id: ""    # free — cse.google.com → New search engine → enable Images → copy Search Engine ID
+  bing_api_key: ""     # free 1000/month — portal.azure.com → Bing Search v7 → F1 tier → Keys and Endpoint
 
 output_dir: "output"

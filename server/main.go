@@ -34,6 +34,13 @@ type Config struct {
 		SerperAPIKey string `yaml:"serper_api_key"`
 		NewsAPIKey   string `yaml:"news_api_key"`
 	} `yaml:"research"`
+	Search struct {
+		SerpAPIKey   string `yaml:"serp_api_key"`
+		FlickrAPIKey string `yaml:"flickr_api_key"`
+		GoogleAPIKey string `yaml:"google_api_key"`
+		GoogleCSEID  string `yaml:"google_cse_id"`
+		BingAPIKey   string `yaml:"bing_api_key"`
+	} `yaml:"search"`
 	OutputDir string `yaml:"output_dir"`
 	Server    struct {
 		Port int `yaml:"port"`
@@ -105,6 +112,7 @@ func main() {
 	mux.HandleFunc("POST /api/projects/{id}/assemble", handleAssemble)
 	mux.HandleFunc("GET /api/projects/{id}/download", handleDownload)
 	mux.HandleFunc("POST /api/projects/{id}/thumbnail", handleGenerateThumbnail)
+	mux.HandleFunc("POST /api/projects/{id}/thumbnail-prompt", handleThumbnailPrompt)
 
 	// ── Cue clip selection ────────────────────────────────────────────────────
 	mux.HandleFunc("POST /api/projects/{id}/cues/{idx}/select", handleSelectClip)

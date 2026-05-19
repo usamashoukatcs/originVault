@@ -12,7 +12,7 @@ import (
 //
 // Query params:
 //
-//	source   = pexels | pexels-photo | pixabay-video | pixabay-photo | unsplash | commons | duckduckgo
+//	source   = google | bing | flickr | google-cse | duckduckgo | commons | pexels | pexels-photo | pixabay-video | pixabay-photo | unsplash
 //	query    = search string
 //	portrait = "true" for vertical/short clips
 //	page     = 1-based page number (default 1) — pass 2, 3, etc. to get fresh results
@@ -31,7 +31,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if source == "" {
-		source = "pexels"
+		source = "google"
 	}
 
 	orientation := "landscape"
@@ -43,6 +43,28 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	switch source {
+	// SerpAPI sources
+	case "serp-google":
+		results, err = pipeline.SearchSerpAPIGoogleImages(cfg.Search.SerpAPIKey, query, page)
+	case "serp-bing":
+		results, err = pipeline.SearchSerpAPIBingImages(cfg.Search.SerpAPIKey, query, page)
+	case "serp-yahoo":
+		results, err = pipeline.SearchSerpAPIYahooImages(cfg.Search.SerpAPIKey, query, page)
+	case "serp-youtube":
+		results, err = pipeline.SearchSerpAPIYouTube(cfg.Search.SerpAPIKey, query)
+	// Other sources
+	case "google":
+		results, err = pipeline.SearchSerperImagesMulti(researchCfg.SerperAPIKey, query, page)
+	case "bing":
+		results, err = pipeline.SearchBingImagesMulti(cfg.Search.BingAPIKey, query, page)
+	case "flickr":
+		results, err = pipeline.SearchFlickrMulti(cfg.Search.FlickrAPIKey, query, page)
+	case "google-cse":
+		results, err = pipeline.SearchGoogleCSEMulti(cfg.Search.GoogleAPIKey, cfg.Search.GoogleCSEID, query, page)
+	case "duckduckgo":
+		results, err = pipeline.SearchDDGMulti(query)
+	case "commons":
+		results, err = pipeline.SearchCommonsMulti(query)
 	case "pexels":
 		results, err = pipeline.SearchPexelsMulti(footageCfg.PexelsAPIKey, query, orientation)
 	case "pexels-photo":
@@ -53,10 +75,6 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		results, err = pipeline.SearchPixabayPhotoMulti(footageCfg.PixabayAPIKey, query)
 	case "unsplash":
 		results, err = pipeline.SearchUnsplashMulti(footageCfg.UnsplashAccessKey, query, page)
-	case "commons":
-		results, err = pipeline.SearchCommonsMulti(query)
-	case "duckduckgo":
-		results, err = pipeline.SearchDDGMulti(query)
 	default:
 		jsonErr(w, 400, fmt.Sprintf("unknown source: %s", source))
 		return
