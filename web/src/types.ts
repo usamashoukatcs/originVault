@@ -103,6 +103,17 @@ export interface Idea {
   updated_at: string
 }
 
+export interface ThumbnailPromptResult {
+  focal_element: string
+  visual_concept: string
+  color_mood: string
+  prompt: string
+  negative_prompt: string
+  text_overlay: string
+  text_placement: string
+  canva_tips: string
+}
+
 export interface SearchResult {
   thumb_url: string
   download_url: string

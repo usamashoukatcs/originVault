@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
-import type { Overlay, Project } from '../types'
+import type { Overlay, Project, ThumbnailPromptResult } from '../types'
 
 export default function Assembly() {
   const { id } = useParams<{ id: string }>()
@@ -13,6 +13,13 @@ export default function Assembly() {
   const [polling, setPolling] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const logEndRef = useRef<HTMLDivElement>(null)
+
+  // Thumbnail prompt state
+  const [thumbPrompt, setThumbPrompt] = useState<ThumbnailPromptResult | null>(null)
+  const [thumbTheme, setThumbTheme] = useState<'red' | 'gold' | 'blue'>('red')
+  const [generatingThumb, setGeneratingThumb] = useState(false)
+  const [thumbError, setThumbError] = useState('')
+  const [copied, setCopied] = useState<string>('')
 
   // Overlay editor state
   const [showOverlayForm, setShowOverlayForm] = useState(false)
@@ -117,6 +124,27 @@ export default function Assembly() {
     setProject(p)
   }
 
+  async function handleGenerateThumbPrompt() {
+    if (!id) return
+    setGeneratingThumb(true)
+    setThumbError('')
+    setThumbPrompt(null)
+    try {
+      const result = await api.generateThumbnailPrompt(id, thumbTheme)
+      setThumbPrompt(result)
+    } catch (e: any) {
+      setThumbError(e.message || 'Failed to generate prompt')
+    } finally {
+      setGeneratingThumb(false)
+    }
+  }
+
+  function copyText(text: string, key: string) {
+    navigator.clipboard.writeText(text)
+    setCopied(key)
+    setTimeout(() => setCopied(''), 2000)
+  }
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center"><p className="text-gray-400">Loading...</p></div>
   }
@@ -178,6 +206,140 @@ export default function Assembly() {
                 <summary className="text-gray-500 text-xs cursor-pointer hover:text-gray-300">Show description</summary>
                 <pre className="mt-2 text-gray-400 text-xs whitespace-pre-wrap leading-relaxed">{p.description}</pre>
               </details>
+            )}
+          </div>
+        )}
+
+        {/* AI Thumbnail Prompt — Imagine Art */}
+        {p?.script && (
+          <div className="card p-5 space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Thumbnail Prompt</h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Optimized for{' '}
+                  <a href="https://www.imagine.art" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                    Imagine Art ↗
+                  </a>
+                  {' '}· Set aspect ratio to 16:9 in the app
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-500">Story tone:</span>
+                {(['red', 'gold', 'blue'] as const).map(t => (
+                  <button
+                    key={t}
+                    onClick={() => { setThumbTheme(t); setThumbPrompt(null) }}
+                    className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                      thumbTheme === t
+                        ? t === 'red' ? 'bg-red-800 text-red-200 ring-1 ring-red-600'
+                          : t === 'gold' ? 'bg-yellow-800 text-yellow-200 ring-1 ring-yellow-600'
+                          : 'bg-blue-800 text-blue-200 ring-1 ring-blue-600'
+                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                    }`}
+                  >
+                    {t === 'red' ? 'Drama / Failure' : t === 'gold' ? 'Success / Rise' : 'Tech / Innovation'}
+                  </button>
+                ))}
+                <button
+                  className="btn-primary text-sm"
+                  disabled={generatingThumb}
+                  onClick={handleGenerateThumbPrompt}
+                >
+                  {generatingThumb ? 'Generating...' : thumbPrompt ? 'Regenerate' : 'Generate'}
+                </button>
+              </div>
+            </div>
+
+            {thumbError && <p className="text-red-400 text-sm">{thumbError}</p>}
+
+            {generatingThumb && (
+              <p className="text-gray-400 text-sm animate-pulse">Crafting your Imagine Art prompt...</p>
+            )}
+
+            {thumbPrompt && (
+              <div className="space-y-4">
+
+                {/* Concept overview */}
+                <div className="bg-gray-900 rounded-lg px-4 py-3 border border-gray-700 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <p className="text-gray-500 mb-0.5">Concept</p>
+                    <p className="text-white font-semibold">{thumbPrompt.visual_concept}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 mb-0.5">Subject</p>
+                    <p className="text-gray-300">{thumbPrompt.focal_element}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 mb-0.5">Mood</p>
+                    <p className="text-gray-300">{thumbPrompt.color_mood}</p>
+                  </div>
+                </div>
+
+                {/* Positive prompt */}
+                <PromptBox
+                  label="Positive Prompt"
+                  sublabel="Paste into Imagine Art's main prompt field"
+                  text={thumbPrompt.prompt}
+                  copyKey="prompt"
+                  copied={copied}
+                  onCopy={copyText}
+                />
+
+                {/* Negative prompt */}
+                <PromptBox
+                  label="Negative Prompt"
+                  sublabel="Paste into Imagine Art's negative prompt field"
+                  text={thumbPrompt.negative_prompt}
+                  copyKey="neg"
+                  copied={copied}
+                  onCopy={copyText}
+                />
+
+                {/* Text overlay */}
+                <div className="bg-gray-900 rounded-lg px-4 py-3 border border-gray-700 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-semibold text-gray-300">Text Overlay</span>
+                      <span className="text-xs text-gray-600 ml-2">Add this in Canva after generating the image</span>
+                    </div>
+                    <button
+                      onClick={() => copyText(thumbPrompt.text_overlay, 'text')}
+                      className="text-xs px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                    >
+                      {copied === 'text' ? '✓ Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <p
+                    className="text-white font-black text-xl tracking-widest cursor-pointer select-all"
+                    onClick={() => copyText(thumbPrompt.text_overlay, 'text')}
+                  >
+                    {thumbPrompt.text_overlay}
+                  </p>
+                  <p className="text-gray-500 text-xs">{thumbPrompt.text_placement}</p>
+                </div>
+
+                {/* Canva tips */}
+                <details>
+                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300 select-none">
+                    Canva finishing tips ▸
+                  </summary>
+                  <div className="mt-2 bg-gray-900 rounded-lg px-4 py-3 border border-gray-800">
+                    <p className="text-gray-400 text-xs whitespace-pre-wrap leading-relaxed">{thumbPrompt.canva_tips}</p>
+                  </div>
+                </details>
+
+                {/* Workflow reminder */}
+                <div className="flex items-start gap-2 bg-blue-950/40 border border-blue-900/50 rounded-lg px-4 py-3 text-xs text-blue-300">
+                  <span className="mt-0.5">ℹ</span>
+                  <div className="space-y-0.5">
+                    <p className="font-medium">Workflow: Imagine Art → download image → Canva → add text overlay → export 1280×720</p>
+                    <p className="text-blue-400 opacity-75">In Imagine Art: set aspect ratio to 16:9, use Realistic Vision V5.1 or Imagine V5 model for best photorealism</p>
+                  </div>
+                </div>
+
+              </div>
             )}
           </div>
         )}
@@ -361,6 +523,40 @@ export default function Assembly() {
         </div>
 
       </main>
+    </div>
+  )
+}
+
+function PromptBox({
+  label, sublabel, text, copyKey, copied, onCopy,
+}: {
+  label: string
+  sublabel: string
+  text: string
+  copyKey: string
+  copied: string
+  onCopy: (text: string, key: string) => void
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-xs font-semibold text-gray-300">{label}</span>
+          <span className="text-xs text-gray-600 ml-2">{sublabel}</span>
+        </div>
+        <button
+          onClick={() => onCopy(text, copyKey)}
+          className="text-xs px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+        >
+          {copied === copyKey ? '✓ Copied' : 'Copy'}
+        </button>
+      </div>
+      <div
+        className="bg-gray-950 border border-gray-800 rounded-lg p-3 text-xs text-gray-300 leading-relaxed cursor-pointer hover:border-gray-600 transition-colors select-all"
+        onClick={() => onCopy(text, copyKey)}
+      >
+        {text}
+      </div>
     </div>
   )
 }

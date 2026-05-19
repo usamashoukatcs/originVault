@@ -1,4 +1,4 @@
-import type { Project, ProjectSummary, SearchResult, Overlay, Idea } from './types'
+import type { Project, ProjectSummary, SearchResult, Overlay, Idea, ThumbnailPromptResult } from './types'
 
 const BASE = '/api'
 
@@ -78,6 +78,10 @@ export const api = {
   expandIdea: (id: string) => req<Idea>('POST', `/ideas/${id}/expand`),
   deleteIdea: (id: string) => req<void>('DELETE', `/ideas/${id}`),
   createProjectFromIdea: (id: string) => req<Project>('POST', `/ideas/${id}/project`),
+
+  // Thumbnail prompt generation
+  generateThumbnailPrompt: (id: string, theme: 'red' | 'gold' | 'blue') =>
+    req<ThumbnailPromptResult>('POST', `/projects/${id}/thumbnail-prompt`, { theme }),
 
   // Overlays
   listOverlays: (id: string) => req<Overlay[]>('GET', `/projects/${id}/overlays`),

@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/originvault/pipeline"
 )
@@ -194,6 +195,56 @@ func handleGenerateScript(w http.ResponseWriter, r *http.Request) {
 		}
 		logf("Script saved. Open the Cue Picker to select images.")
 	}()
+}
+
+// handleThumbnailPrompt generates AI image generation prompts for the project's thumbnail.
+// Returns prompts optimized for Midjourney, DALL-E, Imagine Art, and Stable Diffusion.
+func handleThumbnailPrompt(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, err := store.GetProject(id)
+	if err != nil {
+		jsonErr(w, 404, err.Error())
+		return
+	}
+	if p.Title == "" || p.Script == "" {
+		jsonErr(w, 400, "project must have a script before generating a thumbnail prompt")
+		return
+	}
+
+	// extract first ~300 words of script as excerpt
+	words := strings.Fields(p.Script)
+	if len(words) > 60 {
+		words = words[:60]
+	}
+	excerpt := strings.Join(words, " ")
+
+	var body struct {
+		Theme string `json:"theme"` // optional: "red" | "gold" | "blue"
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	accentTheme := body.Theme
+	if accentTheme != "red" && accentTheme != "gold" && accentTheme != "blue" {
+		accentTheme = "red" // dramatic default
+	}
+
+	subject := p.Topic
+	if subject == "" {
+		subject = p.Title
+	}
+
+	result, err := pipeline.GenerateThumbnailPrompt(
+		cfg.AnthropicAPIKey,
+		subject,
+		p.Title,
+		p.Summary,
+		excerpt,
+		accentTheme,
+	)
+	if err != nil {
+		jsonErr(w, 500, fmt.Sprintf("failed to generate thumbnail prompt: %v", err))
+		return
+	}
+	jsonOK(w, result)
 }
 
 // saveScriptCompat writes script_output.json + script.txt for CLI --resume compatibility.
