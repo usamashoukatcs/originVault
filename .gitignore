@@ -16,3 +16,5 @@ web/node_modules/
 .idea/
 server/server
 server/server
+
+.air.toml
