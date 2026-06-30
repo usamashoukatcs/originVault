@@ -151,38 +151,43 @@ export default function Home() {
           <h1 className="text-xl font-bold text-white tracking-tight">OriginVault</h1>
           <p className="text-xs text-gray-500 mt-0.5">YouTube automation dashboard</p>
         </div>
-        {tab === 'projects' && (
-          <button className="btn-primary" onClick={() => navigate('/projects/new')}>
-            + New Project
+        <div className="flex items-center gap-3 ml-auto">
+          <button className="btn-secondary text-sm" onClick={() => navigate('/transcribe')}>
+            Transcribe Audio
           </button>
-        )}
-        {tab === 'ideas' && (
-          <div className="flex items-center gap-3">
-            <a
-              href="/api/ideas/export"
-              download="ideas.csv"
-              className="btn-secondary text-sm"
-            >
-              Export CSV
-            </a>
-            <select
-              className="input text-sm py-1.5 w-20"
-              value={ideaCount}
-              onChange={e => setIdeaCount(Number(e.target.value))}
-            >
-              {[3, 5, 10, 15, 20].map(n => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
-            <button
-              className="btn-primary text-sm"
-              disabled={generatingIdeas}
-              onClick={generateIdeas}
-            >
-              {generatingIdeas ? 'Generating...' : '+ Generate Ideas'}
+          {tab === 'projects' && (
+            <button className="btn-primary" onClick={() => navigate('/projects/new')}>
+              + New Project
             </button>
-          </div>
-        )}
+          )}
+          {tab === 'ideas' && (
+            <>
+              <a
+                href="/api/ideas/export"
+                download="ideas.csv"
+                className="btn-secondary text-sm"
+              >
+                Export CSV
+              </a>
+              <select
+                className="input text-sm py-1.5 w-20"
+                value={ideaCount}
+                onChange={e => setIdeaCount(Number(e.target.value))}
+              >
+                {[3, 5, 10, 15, 20].map(n => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+              <button
+                className="btn-primary text-sm"
+                disabled={generatingIdeas}
+                onClick={generateIdeas}
+              >
+                {generatingIdeas ? 'Generating...' : '+ Generate Ideas'}
+              </button>
+            </>
+          )}
+        </div>
       </header>
 
       {/* Tabs */}
