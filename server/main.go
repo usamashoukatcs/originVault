@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/originvault/pipeline"
 	"gopkg.in/yaml.v3"
@@ -137,6 +138,9 @@ func main() {
 	// ── Image search ──────────────────────────────────────────────────────────
 	mux.HandleFunc("GET /api/search", handleSearch)
 
+	// ── Transcription ─────────────────────────────────────────────────────────
+	mux.HandleFunc("POST /api/transcribe", handleTranscribe)
+
 	// ── Serve generated output files (AI images, thumbnails) ─────────────────
 	mux.Handle("/output/", http.StripPrefix("/output/", http.FileServer(http.Dir(store.RootDir()))))
 
@@ -153,7 +157,13 @@ func main() {
 
 	handler := corsMiddleware(mux)
 	fmt.Printf("OriginVault dashboard → http://localhost:%d\n", port)
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), handler); err != nil {
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", port),
+		Handler:      handler,
+		ReadTimeout:  10 * time.Minute,
+		WriteTimeout: 10 * time.Minute,
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		fmt.Printf("Server error: %v\n", err)
 		os.Exit(1)
 	}
