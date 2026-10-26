@@ -14,24 +14,28 @@ import (
 
 // Project is the full project record stored in {outputDir}/project.json.
 type Project struct {
-	ID          string         `json:"id"`
-	Topic       string         `json:"topic"`
-	Title       string         `json:"title"`
-	Summary     string         `json:"summary"`
-	Description string         `json:"description"`
-	Script      string         `json:"script"`
-	Keywords    []string       `json:"keywords"`
-	Hashtags    []string       `json:"hashtags"`
-	Status      string         `json:"status"` // pending | generating | script_done | voicing | voice_done | assembling | done | error
-	StatusLog   []string       `json:"status_log"`
-	OutputDir   string         `json:"output_dir"`
-	VideoPath     string         `json:"video_path"`
-	ThumbnailPath string         `json:"thumbnail_path,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	Cues        []DashboardCue `json:"cues"`
-	Overlays    []Overlay      `json:"overlays"`
-	Research    []pipeline.ResearchResult `json:"research,omitempty"`
+	ID            string                    `json:"id"`
+	Topic         string                    `json:"topic"`
+	Title         string                    `json:"title"`
+	Summary       string                    `json:"summary"`
+	Description   string                    `json:"description"`
+	Script        string                    `json:"script"`
+	Keywords      []string                  `json:"keywords"`
+	Hashtags      []string                  `json:"hashtags"`
+	Status        string                    `json:"status"` // pending | generating | script_done | voicing | voice_done | assembling | done | error
+	StatusLog     []string                  `json:"status_log"`
+	OutputDir     string                    `json:"output_dir"`
+	VideoPath     string                    `json:"video_path"`
+	ThumbnailPath string                    `json:"thumbnail_path,omitempty"`
+	CreatedAt     time.Time                 `json:"created_at"`
+	UpdatedAt     time.Time                 `json:"updated_at"`
+	Cues          []DashboardCue            `json:"cues"`
+	Overlays      []Overlay                 `json:"overlays"`
+	Research      []pipeline.ResearchResult `json:"research,omitempty"`
+	BlogPost      *pipeline.BlogPostResult  `json:"blog_post,omitempty"`
+	Shorts        []pipeline.ShortVideo     `json:"shorts,omitempty"`
+	ShortPaths    []string                  `json:"short_paths,omitempty"`
+	ShortsStatus  string                    `json:"shorts_status,omitempty"` // "" | assembling | done | error
 }
 
 // SelectedClipInfo holds one clip in a cue's sequence.

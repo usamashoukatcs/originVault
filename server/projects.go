@@ -178,6 +178,7 @@ func handleGenerateScript(w http.ResponseWriter, r *http.Request) {
 		proj.Keywords = script.Keywords
 		proj.Hashtags = script.Hashtags
 		proj.Research = research
+		proj.Shorts = script.Shorts
 		proj.Status = "script_done"
 
 		proj.Cues = make([]DashboardCue, len(script.ClipCues))

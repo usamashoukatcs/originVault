@@ -1,4 +1,4 @@
-import type { Project, ProjectSummary, SearchResult, Overlay, Idea, ThumbnailPromptResult } from './types'
+import type { Project, ProjectSummary, SearchResult, Overlay, Idea, ThumbnailPromptResult, BlogPostResult } from './types'
 
 const BASE = '/api'
 
@@ -91,4 +91,15 @@ export const api = {
     req<Overlay>('PUT', `/projects/${id}/overlays/${oid}`, ov),
   deleteOverlay: (id: string, oid: string) =>
     req<void>('DELETE', `/projects/${id}/overlays/${oid}`),
+
+  // Blog post generation + WordPress publishing
+  generateBlogPost: (id: string) =>
+    req<BlogPostResult>('POST', `/projects/${id}/blog-post`),
+  publishBlogPost: (id: string, status: 'draft' | 'publish') =>
+    req<{ url: string; post_id: number; status: string }>('POST', `/projects/${id}/blog-post/publish`, { status }),
+
+  // Shorts assembly
+  assembleShorts: (id: string) =>
+    req<{ status: string }>('POST', `/projects/${id}/shorts`),
+  downloadShortURL: (id: string, idx: number) => `${BASE}/projects/${id}/shorts/${idx}/download`,
 }

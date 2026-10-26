@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
-import type { Overlay, Project, ThumbnailPromptResult } from '../types'
+import type { BlogPostResult, Overlay, Project, ThumbnailPromptResult } from '../types'
 
 export default function Assembly() {
   const { id } = useParams<{ id: string }>()
@@ -21,6 +21,17 @@ export default function Assembly() {
   const [thumbError, setThumbError] = useState('')
   const [copied, setCopied] = useState<string>('')
 
+  // Blog post state
+  const [blogPost, setBlogPost] = useState<BlogPostResult | null>(null)
+  const [generatingBlog, setGeneratingBlog] = useState(false)
+  const [blogError, setBlogError] = useState('')
+  const [publishingBlog, setPublishingBlog] = useState(false)
+  const [publishStatus, setPublishStatus] = useState<'draft' | 'publish'>('draft')
+
+  // Shorts state
+  const [assemblingShorts, setAssemblingShorts] = useState(false)
+  const shortsPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   // Overlay editor state
   const [showOverlayForm, setShowOverlayForm] = useState(false)
   const [editingOverlay, setEditingOverlay] = useState<Overlay | null>(null)
@@ -38,7 +49,13 @@ export default function Assembly() {
   useEffect(() => {
     if (!id) return
     api.getProject(id)
-      .then(p => { setProject(p); setLog(p.status_log ?? []); setLoading(false) })
+      .then(p => {
+        setProject(p)
+        setLog(p.status_log ?? [])
+        setBlogPost(p.blog_post ?? null)
+        setAssemblingShorts(p.shorts_status === 'assembling')
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
   }, [id])
 
@@ -144,6 +161,60 @@ export default function Assembly() {
     setCopied(key)
     setTimeout(() => setCopied(''), 2000)
   }
+
+  async function handleGenerateBlogPost() {
+    if (!id) return
+    setGeneratingBlog(true)
+    setBlogError('')
+    try {
+      const result = await api.generateBlogPost(id)
+      setBlogPost(result)
+    } catch (e: any) {
+      setBlogError(e.message || 'Failed to generate blog post')
+    } finally {
+      setGeneratingBlog(false)
+    }
+  }
+
+  async function handlePublishBlogPost() {
+    if (!id) return
+    setPublishingBlog(true)
+    setBlogError('')
+    try {
+      const result = await api.publishBlogPost(id, publishStatus)
+      setBlogPost(bp => bp ? { ...bp, published_url: result.url, published_id: result.post_id } : bp)
+    } catch (e: any) {
+      setBlogError(e.message || 'Failed to publish')
+    } finally {
+      setPublishingBlog(false)
+    }
+  }
+
+  function startShortsPolling() {
+    if (shortsPollRef.current) return
+    shortsPollRef.current = setInterval(async () => {
+      if (!id) return
+      try {
+        const latest = await api.getProject(id)
+        if (latest.shorts_status !== 'assembling') {
+          clearInterval(shortsPollRef.current!)
+          shortsPollRef.current = null
+          setAssemblingShorts(false)
+          setProject(latest)
+          setLog(latest.status_log ?? [])
+        }
+      } catch { /* ignore */ }
+    }, 3000)
+  }
+
+  async function handleAssembleShorts() {
+    if (!id) return
+    setAssemblingShorts(true)
+    await api.assembleShorts(id)
+    startShortsPolling()
+  }
+
+  useEffect(() => () => { if (shortsPollRef.current) clearInterval(shortsPollRef.current) }, [])
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center"><p className="text-gray-400">Loading...</p></div>
@@ -341,6 +412,114 @@ export default function Assembly() {
 
               </div>
             )}
+          </div>
+        )}
+
+        {/* Blog Post — generate + publish to WordPress */}
+        {p?.script && (
+          <div className="card p-5 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Blog Post</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Adapts the script into an article and publishes it to WordPress</p>
+              </div>
+              <button className="btn-primary text-sm" disabled={generatingBlog} onClick={handleGenerateBlogPost}>
+                {generatingBlog ? 'Generating...' : blogPost ? 'Regenerate' : 'Generate'}
+              </button>
+            </div>
+
+            {blogError && <p className="text-red-400 text-sm">{blogError}</p>}
+            {generatingBlog && <p className="text-gray-400 text-sm animate-pulse">Rewriting the script as an article...</p>}
+
+            {blogPost && (
+              <div className="space-y-3">
+                <div className="bg-gray-900 rounded-lg px-4 py-3 border border-gray-700 space-y-1">
+                  <p className="text-white font-semibold">{blogPost.title}</p>
+                  <p className="text-gray-400 text-xs">{blogPost.excerpt}</p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {blogPost.categories?.map((c, i) => (
+                      <span key={i} className="bg-blue-900/50 text-blue-300 text-xs px-2 py-0.5 rounded">{c}</span>
+                    ))}
+                    {blogPost.tags?.map((t, i) => (
+                      <span key={i} className="bg-gray-800 text-gray-400 text-xs px-2 py-0.5 rounded">#{t}</span>
+                    ))}
+                  </div>
+                </div>
+
+                <details>
+                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300 select-none">
+                    Preview article HTML ▸
+                  </summary>
+                  <div
+                    className="mt-2 bg-gray-950 border border-gray-800 rounded-lg p-4 text-sm text-gray-300 leading-relaxed max-h-96 overflow-y-auto prose-sm"
+                    dangerouslySetInnerHTML={{ __html: blogPost.content_html }}
+                  />
+                </details>
+
+                {blogPost.published_url ? (
+                  <div className="bg-green-950 border border-green-800 rounded-lg px-4 py-3 flex items-center justify-between">
+                    <p className="text-green-300 text-sm">Published as {publishStatus}</p>
+                    <a href={blogPost.published_url} target="_blank" rel="noopener noreferrer" className="text-green-400 text-sm underline">
+                      View post ↗
+                    </a>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                      className="input text-sm w-auto"
+                      value={publishStatus}
+                      onChange={e => setPublishStatus(e.target.value as 'draft' | 'publish')}
+                    >
+                      <option value="draft">Save as draft</option>
+                      <option value="publish">Publish live</option>
+                    </select>
+                    <button className="btn-secondary text-sm" disabled={publishingBlog} onClick={handlePublishBlogPost}>
+                      {publishingBlog ? 'Publishing...' : 'Publish to WordPress'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Shorts — vertical clips assembled from the script's short-form cuts */}
+        {p?.shorts && p.shorts.length > 0 && (
+          <div className="card p-5 space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Shorts</h2>
+                <p className="text-xs text-gray-500 mt-0.5">{p.shorts.length} short(s) generated with the script — voiceover + vertical clips + burnt-in subtitles</p>
+              </div>
+              <button className="btn-primary text-sm" disabled={assemblingShorts} onClick={handleAssembleShorts}>
+                {assemblingShorts ? 'Assembling...' : p.short_paths?.length ? 'Re-assemble All' : 'Assemble All Shorts'}
+              </button>
+            </div>
+
+            {p.shorts_status === 'error' && (
+              <p className="text-red-400 text-sm">Shorts assembly failed — check the log below.</p>
+            )}
+
+            <div className="space-y-2">
+              {p.shorts.map((s, i) => {
+                const path = p.short_paths?.[i]
+                return (
+                  <div key={i} className="flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">{s.title}</p>
+                      <p className="text-gray-500 text-xs mt-0.5 truncate">{s.hook}</p>
+                    </div>
+                    {path ? (
+                      <a href={api.downloadShortURL(id!, i)} download className="btn-secondary text-xs">
+                        Download
+                      </a>
+                    ) : (
+                      <span className="text-gray-600 text-xs">{assemblingShorts ? 'pending...' : 'not assembled'}</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
 

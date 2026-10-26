@@ -66,6 +66,26 @@ export interface DashboardCue extends ClipCue {
   selected_thumb_url: string
 }
 
+export interface BlogPostResult {
+  title: string
+  slug: string
+  excerpt: string
+  content_html: string
+  tags: string[]
+  categories: string[]
+  published_url?: string
+  published_id?: number
+}
+
+export interface ShortVideo {
+  title: string
+  hook: string
+  script: string
+  scenes: string[]
+}
+
+export type ShortsStatus = '' | 'assembling' | 'done' | 'error'
+
 export interface Project {
   id: string
   topic: string
@@ -83,6 +103,10 @@ export interface Project {
   updated_at: string
   cues: DashboardCue[]
   overlays: Overlay[]
+  blog_post?: BlogPostResult
+  shorts?: ShortVideo[]
+  short_paths?: string[]
+  shorts_status?: ShortsStatus
 }
 
 export type IdeaStatus = 'idea' | 'expanding' | 'ready' | 'error'

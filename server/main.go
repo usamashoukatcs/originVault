@@ -42,6 +42,11 @@ type Config struct {
 		GoogleCSEID  string `yaml:"google_cse_id"`
 		BingAPIKey   string `yaml:"bing_api_key"`
 	} `yaml:"search"`
+	WordPress struct {
+		SiteURL     string `yaml:"site_url"`
+		Username    string `yaml:"username"`
+		AppPassword string `yaml:"app_password"`
+	} `yaml:"wordpress"`
 	OutputDir string `yaml:"output_dir"`
 	Server    struct {
 		Port int `yaml:"port"`
@@ -54,6 +59,7 @@ var (
 	voiceCfg    pipeline.VoiceConfig
 	footageCfg  pipeline.FootageConfig
 	researchCfg pipeline.ResearchConfig
+	wpCfg       pipeline.WordPressConfig
 )
 
 func main() {
@@ -86,6 +92,11 @@ func main() {
 		SerperAPIKey: cfg.Research.SerperAPIKey,
 		NewsAPIKey:   cfg.Research.NewsAPIKey,
 	}
+	wpCfg = pipeline.WordPressConfig{
+		SiteURL:     cfg.WordPress.SiteURL,
+		Username:    cfg.WordPress.Username,
+		AppPassword: cfg.WordPress.AppPassword,
+	}
 
 	outDir := cfg.OutputDir
 	if outDir == "" {
@@ -114,6 +125,10 @@ func main() {
 	mux.HandleFunc("GET /api/projects/{id}/download", handleDownload)
 	mux.HandleFunc("POST /api/projects/{id}/thumbnail", handleGenerateThumbnail)
 	mux.HandleFunc("POST /api/projects/{id}/thumbnail-prompt", handleThumbnailPrompt)
+	mux.HandleFunc("POST /api/projects/{id}/blog-post", handleGenerateBlogPost)
+	mux.HandleFunc("POST /api/projects/{id}/blog-post/publish", handlePublishBlogPost)
+	mux.HandleFunc("POST /api/projects/{id}/shorts", handleAssembleShorts)
+	mux.HandleFunc("GET /api/projects/{id}/shorts/{idx}/download", handleDownloadShort)
 
 	// ── Cue clip selection ────────────────────────────────────────────────────
 	mux.HandleFunc("POST /api/projects/{id}/cues/{idx}/select", handleSelectClip)
