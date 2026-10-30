@@ -60,6 +60,36 @@ func handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]string{"status": "deleted"})
 }
 
+func handlePatchProject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, err := store.GetProject(id)
+	if err != nil {
+		jsonErr(w, 404, err.Error())
+		return
+	}
+	var body struct {
+		Script      *string  `json:"script"`
+		Title       *string  `json:"title"`
+		Description *string  `json:"description"`
+		Keywords    []string `json:"keywords"`
+		Hashtags    []string `json:"hashtags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		jsonErr(w, 400, "invalid JSON")
+		return
+	}
+	if body.Script != nil      { p.Script = *body.Script }
+	if body.Title != nil       { p.Title = *body.Title }
+	if body.Description != nil { p.Description = *body.Description }
+	if body.Keywords != nil    { p.Keywords = body.Keywords }
+	if body.Hashtags != nil    { p.Hashtags = body.Hashtags }
+	if err := store.SaveProject(p); err != nil {
+		jsonErr(w, 500, err.Error())
+		return
+	}
+	jsonOK(w, p)
+}
+
 func handleProjectStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	p, err := store.GetProject(id)

@@ -22,6 +22,8 @@ export const api = {
   createProject: (topic: string) =>
     req<Project>('POST', '/projects', { topic }),
   deleteProject: (id: string) => req<void>('DELETE', `/projects/${id}`),
+  patchProject: (id: string, body: { script?: string; title?: string; description?: string; keywords?: string[]; hashtags?: string[] }) =>
+    req<Project>('PATCH', `/projects/${id}`, body),
 
   // Async steps
   getStatus: (id: string) =>

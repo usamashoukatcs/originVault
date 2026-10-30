@@ -115,6 +115,7 @@ func main() {
 	mux.HandleFunc("GET /api/projects", handleListProjects)
 	mux.HandleFunc("POST /api/projects", handleCreateProject)
 	mux.HandleFunc("GET /api/projects/{id}", handleGetProject)
+	mux.HandleFunc("PATCH /api/projects/{id}", handlePatchProject)
 	mux.HandleFunc("DELETE /api/projects/{id}", handleDeleteProject)
 
 	// ── Async pipeline steps ──────────────────────────────────────────────────

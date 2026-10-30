@@ -32,6 +32,11 @@ export default function Assembly() {
   const [assemblingShorts, setAssemblingShorts] = useState(false)
   const shortsPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Script editor state
+  const [scriptDraft, setScriptDraft] = useState('')
+  const [savingScript, setSavingScript] = useState(false)
+  const [scriptSaved, setScriptSaved] = useState(false)
+
   // Overlay editor state
   const [showOverlayForm, setShowOverlayForm] = useState(false)
   const [editingOverlay, setEditingOverlay] = useState<Overlay | null>(null)
@@ -51,6 +56,7 @@ export default function Assembly() {
     api.getProject(id)
       .then(p => {
         setProject(p)
+        setScriptDraft(p.script ?? '')
         setLog(p.status_log ?? [])
         setBlogPost(p.blog_post ?? null)
         setAssemblingShorts(p.shorts_status === 'assembling')
@@ -94,6 +100,19 @@ export default function Assembly() {
     if (!id) return
     await api.assemble(id)
     startPolling()
+  }
+
+  async function handleSaveScript() {
+    if (!id) return
+    setSavingScript(true)
+    try {
+      const updated = await api.patchProject(id, { script: scriptDraft })
+      setProject(updated)
+      setScriptSaved(true)
+      setTimeout(() => setScriptSaved(false), 2500)
+    } finally {
+      setSavingScript(false)
+    }
   }
 
   // Overlay CRUD
@@ -278,6 +297,32 @@ export default function Assembly() {
                 <pre className="mt-2 text-gray-400 text-xs whitespace-pre-wrap leading-relaxed">{p.description}</pre>
               </details>
             )}
+          </div>
+        )}
+
+        {/* Script Editor */}
+        {p && (
+          <div className="card p-5 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Script</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Edit before generating voiceover — changes are saved to the project</p>
+              </div>
+              <button
+                className="btn-secondary text-xs"
+                disabled={savingScript || scriptDraft === (project?.script ?? '')}
+                onClick={handleSaveScript}
+              >
+                {savingScript ? 'Saving…' : scriptSaved ? '✓ Saved' : 'Save Script'}
+              </button>
+            </div>
+            <textarea
+              className="w-full bg-gray-900 text-gray-300 text-xs rounded-lg p-3 font-mono leading-relaxed resize-y border border-gray-700 focus:border-indigo-500 focus:outline-none"
+              rows={22}
+              value={scriptDraft}
+              onChange={e => { setScriptDraft(e.target.value); setScriptSaved(false) }}
+              placeholder="Script will appear here after generation…"
+            />
           </div>
         )}
 
