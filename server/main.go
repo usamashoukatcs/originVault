@@ -124,6 +124,7 @@ func main() {
 	mux.HandleFunc("POST /api/projects/{id}/voice", handleGenerateVoice)
 	mux.HandleFunc("POST /api/projects/{id}/assemble", handleAssemble)
 	mux.HandleFunc("GET /api/projects/{id}/download", handleDownload)
+	mux.HandleFunc("GET /api/projects/{id}/stream", handleStreamVideo)
 	mux.HandleFunc("POST /api/projects/{id}/thumbnail", handleGenerateThumbnail)
 	mux.HandleFunc("POST /api/projects/{id}/thumbnail-prompt", handleThumbnailPrompt)
 	mux.HandleFunc("POST /api/projects/{id}/blog-post", handleGenerateBlogPost)

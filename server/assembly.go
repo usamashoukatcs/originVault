@@ -453,6 +453,33 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, f)
 }
 
+// handleStreamVideo serves the assembled video with Range support for in-browser playback.
+func handleStreamVideo(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	p, err := store.GetProject(id)
+	if err != nil {
+		jsonErr(w, 404, err.Error())
+		return
+	}
+	if p.VideoPath == "" || p.Status != "done" {
+		jsonErr(w, 400, "video not ready yet")
+		return
+	}
+	f, err := os.Open(p.VideoPath)
+	if err != nil {
+		jsonErr(w, 500, fmt.Sprintf("cannot open video: %v", err))
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		jsonErr(w, 500, "cannot stat video")
+		return
+	}
+	w.Header().Set("Content-Type", "video/mp4")
+	http.ServeContent(w, r, p.VideoPath, info.ModTime(), f)
+}
+
 func sanitize(title string) string {
 	var b strings.Builder
 	for _, c := range strings.ToLower(title) {

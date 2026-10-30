@@ -37,6 +37,7 @@ export const api = {
   assemble: (id: string) =>
     req<{ status: string }>('POST', `/projects/${id}/assemble`),
   downloadURL: (id: string) => `${BASE}/projects/${id}/download`,
+  streamURL:   (id: string) => `${BASE}/projects/${id}/stream`,
 
   // Cue selection
   selectClip: (

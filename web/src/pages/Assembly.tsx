@@ -679,14 +679,23 @@ export default function Assembly() {
           </div>
 
           {p?.status === 'done' && (
-            <div className="bg-green-950 border border-green-800 rounded-lg px-4 py-3 flex items-center justify-between">
-              <div>
-                <p className="text-green-300 font-semibold">Video is ready!</p>
-                <p className="text-green-500 text-xs mt-0.5">{p.video_path}</p>
+            <div className="space-y-3">
+              <div className="bg-green-950 border border-green-800 rounded-lg px-4 py-3 flex items-center justify-between">
+                <div>
+                  <p className="text-green-300 font-semibold">Video is ready!</p>
+                  <p className="text-green-500 text-xs mt-0.5">{p.video_path}</p>
+                </div>
+                <a href={api.downloadURL(id!)} download className="btn-primary text-sm">
+                  Download .mp4
+                </a>
               </div>
-              <a href={api.downloadURL(id!)} download className="btn-primary text-sm">
-                Download .mp4
-              </a>
+              <video
+                key={id}
+                className="w-full rounded-lg border border-gray-700"
+                controls
+                preload="metadata"
+                src={api.streamURL(id!)}
+              />
             </div>
           )}
 
